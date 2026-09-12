@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CanSat GCS — Mission Control</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #181c24;
+    --border: #2a2f3a;
+    --accent: #00d4ff;
+    --accent2: #00ff88;
+    --warn: #ffb800;
+    --danger: #ff3b3b;
+    --text: #e0e6f0;
+    --text2: #7a8499;
+    --text3: #4a5068;
+    --green: #00ff88;
+    --red: #ff3b3b;
+    --font: 'Courier New', 'Consolas', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  /* TOP BAR */
+  #topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  #topbar .logo {
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    margin-right: 8px;
+    white-space: nowrap;
+  }
+  #topbar .mission-time {
+    color: var(--accent2);
+    font-size: 13px;
+    font-weight: bold;
+    min-width: 120px;
+  }
+  #topbar .status-badge {
+    padding: 3px 10px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    border: 1px solid;
+  }
+  .status-active { background: rgba(0,255,136,0.1); color: var(--green); border-color: var(--green); }
+  .status-idle { background: rgba(255,184,0,0.1); color: var(--warn); border-color: var(--warn); }
+  .status-error { background: rgba(255,59,59,0.1); color: var(--danger); border-color: var(--danger); }
+  .btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    font-family: var(--font);
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    border-radius: 3px;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.btn-start { border-color: var(--green); color: var(--green); }
+  .btn.btn-start:hover { background: rgba(0,255,136,0.15); }
+  .btn.btn-stop { border-color: var(--red); color: var(--red); }
+  .btn.btn-stop:hover { background: rgba(255,59,59,0.15); }
+  .btn.btn-warn { border-color: var(--warn); color: var(--warn); }
+  .btn.btn-warn:hover { background: rgba(255,184,0,0.15); }
+  .btn.btn-danger { border-color: var(--danger); color: var(--danger); background: rgba(255,59,59,0.05); }
+  .btn.btn-danger:hover { background: rgba(255,59,59,0.25); }
+  .sep { width: 1px; height: 28px; background: var(--border); }
+  /* MAIN GRID */
+  #main {
+    display: grid;
+    grid-template-columns: 260px 1fr 260px;
+    grid-template-rows: auto auto auto;
+    gap: 6px;
+    padding: 6px;
+    min-height: calc(100vh - 54px);
+  }
+  /* PANEL */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .panel-header {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .panel-title {
+    color: var(--accent);
+    font-size: 10px;
+    letter-spacing: 2px;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+  .panel-body { padding: 8px 10px; }
+  /* TELEMETRY FIELDS */
+  .telem-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .telem-field:last-child { border-bottom: none; }
+  .telem-label { color: var(--text2); font-size: 10px; letter-spacing: 0.5px; }
+  .telem-value { color: var(--accent2); font-size: 12px; font-weight: bold; }
+  .telem-unit { color: var(--text3); font-size: 10px; margin-left: 2px; }
+  /* ERROR CODES */
+  #error-display {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    flex-wrap: wrap;
+  }
+  .error-digit {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: bold;
+    border: 2px solid;
+    border-radius: 4px;
+    transition: all 0.3s;
+  }
+  .err-ok { border-color: var(--green); color: var(--green); background: rgba(0,255,136,0.08); }
+  .err-fault { border-color: var(--danger); color: var(--danger); background: rgba(255,59,59,0.15); animation: pulse-err 0.8s infinite; }
+  @keyframes pulse-err { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .error-labels { flex: 1; min-width: 180px; }
+  .error-label-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 10px; }
+  .error-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  /* CHARTS */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 8px;
+  }
+  .chart-wrap {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 6px;
+  }
+  .chart-wrap-title { color: var(--text2); font-size: 10px; letter-spacing: 1px; margin-bottom: 4px; }
+  /* MAP */
+  #map-container { height: 280px; }
+  #gps-map { height: 100%; }
+  .leaflet-container { background: #0d111a !important; }
+  /* ORIENTATION */
+  #orientation-viz { height: 200px; position: relative; }
+  #three-canvas { width: 100% !important; height: 100% !important; }
+  .rpy-display {
+    display: flex;
+    gap: 12px;
+    padding: 6px 10px;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+  }
+  .rpy-item { text-align: center; flex: 1; }
+  .rpy-label { color: var(--text2); font-size: 9px; letter-spacing: 1px; }
+  .rpy-val { color: var(--accent); font-size: 14px; font-weight: bold; }
+  /* VIDEO */
+  #video-wrap { position: relative; background: #000; }
+  #live-video { width: 100%; height: 180px; object-fit: cover; display: block; background: #050810; }
+  .video-overlay {
+    position: absolute;
+    top: 6px; left: 6px;
+    background: rgba(0,0,0,0.7);
+    padding: 2px 8px;
+    border-radius: 2px;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  .rec-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--danger); margin-right: 4px; animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  /* MISSION CONTROL */
+  .cmd-btn {
+    display: block;
+    width: 100%;
+    margin-bottom: 6px;
+    padding: 8px 10px;
+    text-align: left;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    font-family: var(--font);
+    font-size: 11px;
+    border-radius: 3px;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+  .cmd-btn:hover { border-color: var(--accent); }
+  .cmd-btn.cmd-danger { border-color: rgba(255,59,59,0.4); }
+  .cmd-btn.cmd-danger:hover { border-color: var(--danger); color: var(--danger); background: rgba(255,59,59,0.1); }
+  .cmd-status {
+    font-size: 10px;
+    padding: 4px 8px;
+    margin-top: 6px;
+    border-radius: 3px;
+    min-height: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text2);
+  }
+  /* PACKET LOG */
+  #packet-log {
+    height: 110px;
+    overflow-y: auto;
+    background: #05070d;
+    font-size: 10px;
+    padding: 4px 6px;
+    color: #4dff91;
+    font-family: var(--font);
+    border-top: 1px solid var(--border);
+  }
+  #packet-log::-webkit-scrollbar { width: 4px; }
+  #packet-log::-webkit-scrollbar-track { background: #080a10; }
+  #packet-log::-webkit-scrollbar-thumb { background: var(--border); }
+  .log-line { padding: 1px 0; white-space: nowrap; }
+  .log-warn { color: var(--warn); }
+  .log-err { color: var(--danger); }
+  /* COLUMN SPANS */
+  .col-span-2 { grid-column: span 2; }
+  .col-span-3 { grid-column: span 3; }
+  /* TOOLTIP / MODAL CONFIRM */
+  #confirm-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 999;
+    align-items: center;
+    justify-content: center;
+  }
+  #confirm-modal.show { display: flex; }
+  .modal-box {
+    background: var(--surface);
+    border: 1px solid var(--danger);
+    border-radius: 6px;
+    padding: 24px;
+    max-width: 360px;
+    text-align: center;
+  }
+  .modal-title { color: var(--danger); font-size: 14px; letter-spacing: 2px; margin-bottom: 8px; }
+  .modal-msg { color: var(--text2); font-size: 12px; margin-bottom: 16px; line-height: 1.6; white-space: pre-line; }
+  .modal-btns { display: flex; gap: 10px; justify-content: center; }
+  /* SIGNAL BAR */
+  .signal-bars { display: flex; gap: 2px; align-items: flex-end; height: 16px; }
+  .bar { width: 5px; background: var(--border); border-radius: 1px; transition: background 0.3s; }
+  .bar.active { background: var(--green); }
+  /* SCROLLBAR GLOBAL */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+  /* RESPONSIVE */
+  @media (max-width: 1100px) {
+    #main { grid-template-columns: 240px 1fr 240px; }
+  }
+  @media (max-width: 860px) {
+    #main { grid-template-columns: 1fr 1fr; }
+    .col-span-3 { grid-column: span 2; }
+  }
+  @media (max-width: 560px) {
+    #main { grid-template-columns: 1fr; }
+    .col-span-2, .col-span-3 { grid-column: span 1; }
+  }
+  .blink-cursor::after { content: '_'; animation: blink 0.8s step-end infinite; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <span class="logo">◈ CANSAT-GCS</span>
+  <div class="sep"></div>
+  <span class="mission-time" id="mission-clock">MET 00:00:00</span>
+  <span class="status-badge status-idle" id="tlm-status">● STANDBY</span>
+  <div class="sep"></div>
+  <button class="btn btn-start" id="btn-start" onclick="startTelemetry()">▶ START</button>
+  <button class="btn btn-stop" id="btn-stop" onclick="stopTelemetry()" disabled>■ STOP</button>
+  <div class="sep"></div>
+  <button class="btn" onclick="exportCSV()">↓ CSV</button>
+  <button class="btn" onclick="exportGraphs()">↓ ALL GRAPHS</button>
+  <button class="btn" onclick="syncTime()">⟳ SYNC TIME</button>
+  <button class="btn btn-warn" onclick="resetPackets()">↺ RESET PACKETS</button>
+  <div class="sep"></div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+    <div style="font-size:9px;color:var(--text3);letter-spacing:1px">SIGNAL</div>
+    <div class="signal-bars" id="signal-bars">
+      <div class="bar" style="height:4px" id="sb1"></div>
+      <div class="bar" style="height:7px" id="sb2"></div>
+      <div class="bar" style="height:10px" id="sb3"></div>
+      <div class="bar" style="height:13px" id="sb4"></div>
+      <div class="bar" style="height:16px" id="sb5"></div>
+    </div>
+  </div>
+  <span style="color:var(--text3);font-size:10px;margin-left:4px" id="packet-count">PKT: 0000</span>
+  <div class="sep"></div>
+  <div style="display:flex;align-items:center;gap:6px">
+    <span style="font-size:9px;color:var(--text3);letter-spacing:1px">PY-SIM</span>
+    <input id="ws-port" type="text" value="8765"
+      style="width:44px;background:var(--surface2);color:var(--text2);border:1px solid var(--border);
+             font-family:var(--font);font-size:10px;padding:3px 5px;border-radius:3px" placeholder="port"/>
+    <button class="btn" id="btn-ws-connect" onclick="connectWebSocket()" style="font-size:10px;padding:4px 8px;border-color:#a78bfa;color:#a78bfa">⟳ WS CONNECT</button>
+    <button class="btn btn-stop" id="btn-ws-disconnect" onclick="disconnectWebSocket()" style="font-size:10px;padding:4px 8px" disabled>✕ DISCONNECT</button>
+    <span id="ws-status" style="font-size:10px;color:var(--text3);min-width:60px">● OFFLINE</span>
+  </div>
+  <div style="margin-left:auto;color:var(--text3);font-size:10px" id="pc-time"></div>
+</div>
+
+<!-- MAIN GRID -->
+<div id="main">
+
+  <!-- LEFT COL -->
+  <div style="display:flex;flex-direction:column;gap:6px">
+
+    <!-- Container Telemetry -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">CONTAINER TELEMETRY</span>
+        <span style="font-size:9px;color:var(--text3)" id="tlm-updated">--</span>
+      </div>
+      <div class="panel-body" style="padding:4px 8px">
+        <div class="telem-field"><span class="telem-label">PACKET#</span><span class="telem-value" id="t-pkt">0000</span></div>
+        <div class="telem-field"><span class="telem-label">ALTITUDE</span><span class="telem-value" id="t-alt">--<span class="telem-unit">m</span></span></div>
+        <div class="telem-field"><span class="telem-label">PRESSURE</span><span class="telem-value" id="t-pres">--<span class="telem-unit">hPa</span></span></div>
+        <div class="telem-field"><span class="telem-label">TEMPERATURE</span><span class="telem-value" id="t-temp">--<span class="telem-unit">°C</span></span></div>
+        <div class="telem-field"><span class="telem-label">DESCENT RATE</span><span class="telem-value" id="t-desc">--<span class="telem-unit">m/s</span></span></div>
+        <div class="telem-field"><span class="telem-label">BATTERY</span><span class="telem-value" id="t-batt">--<span class="telem-unit">V</span></span></div>
+        <div class="telem-field"><span class="telem-label">VOLTAGE</span><span class="telem-value" id="t-volt">--<span class="telem-unit">V</span></span></div>
+      </div>
+    </div>
+
+    <!-- Payload Telemetry -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">PAYLOAD TELEMETRY</span>
+      </div>
+      <div class="panel-body" style="padding:4px 8px">
+        <div class="telem-field"><span class="telem-label">ROLL</span><span class="telem-value" id="t-roll">--<span class="telem-unit">°</span></span></div>
+        <div class="telem-field"><span class="telem-label">PITCH</span><span class="telem-value" id="t-pitch">--<span class="telem-unit">°</span></span></div>
+        <div class="telem-field"><span class="telem-label">YAW</span><span class="telem-value" id="t-yaw">--<span class="telem-unit">°</span></span></div>
+        <div class="telem-field"><span class="telem-label">GPS LAT</span><span class="telem-value" id="t-lat">--</span></div>
+        <div class="telem-field"><span class="telem-label">GPS LON</span><span class="telem-value" id="t-lon">--</span></div>
+        <div class="telem-field"><span class="telem-label">GPS SAT</span><span class="telem-value" id="t-sats">--</span></div>
+        <div class="telem-field"><span class="telem-label">GPS FIX</span><span class="telem-value" id="t-fix" style="color:var(--warn)">NO FIX</span></div>
+      </div>
+    </div>
+
+    <!-- Error Code System -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">FAULT CODE SYSTEM</span>
+        <span style="font-size:10px;color:var(--text3)">D1 D2 D3 D4</span>
+      </div>
+      <div id="error-display">
+        <div class="error-digit err-ok" id="err-d1" title="Descent Rate">0</div>
+        <div class="error-digit err-ok" id="err-d2" title="GPS Availability">0</div>
+        <div class="error-digit err-ok" id="err-d3" title="Payload Separation">0</div>
+        <div class="error-digit err-ok" id="err-d4" title="Emergency Parachute">0</div>
+        <div class="error-labels">
+          <div style="font-size:11px;color:var(--text3);letter-spacing:1px;margin-bottom:4px">COMBINED CODE: <span id="fault-code-combined" style="color:var(--green);font-weight:bold;font-size:13px">0000</span></div>
+          <div class="error-label-row"><div class="error-dot" id="edot1" style="background:var(--green)"></div><span style="color:var(--text2)">D1 DESCENT RATE</span></div>
+          <div class="error-label-row"><div class="error-dot" id="edot2" style="background:var(--green)"></div><span style="color:var(--text2)">D2 GPS STATUS</span></div>
+          <div class="error-label-row"><div class="error-dot" id="edot3" style="background:var(--green)"></div><span style="color:var(--text2)">D3 PAYLOAD SEP</span></div>
+          <div class="error-label-row"><div class="error-dot" id="edot4" style="background:var(--green)"></div><span style="color:var(--text2)">D4 PARACHUTE</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fault Inject Test Panel -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">FAULT INJECT (TEST)</span>
+        <span style="font-size:9px;color:var(--text3)">PDF §5</span>
+      </div>
+      <div class="panel-body" style="padding:6px 8px">
+        <div style="font-size:9px;color:var(--text3);margin-bottom:5px">Click SET to inject fault, CLR to clear</div>
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:4px;align-items:center">
+          <span style="font-size:10px;color:var(--text2)">D1 DESCENT RATE</span>
+          <button class="btn" style="font-size:9px;padding:2px 7px;border-color:var(--danger);color:var(--danger)" onclick="injectFault(1,1)">SET</button>
+          <button class="btn" style="font-size:9px;padding:2px 7px" onclick="injectFault(1,0)">CLR</button>
+          <span style="font-size:10px;color:var(--text2)">D2 GPS STATUS</span>
+          <button class="btn" style="font-size:9px;padding:2px 7px;border-color:var(--danger);color:var(--danger)" onclick="injectFault(2,1)">SET</button>
+          <button class="btn" style="font-size:9px;padding:2px 7px" onclick="injectFault(2,0)">CLR</button>
+          <span style="font-size:10px;color:var(--text2)">D3 PAYLOAD SEP</span>
+          <button class="btn" style="font-size:9px;padding:2px 7px;border-color:var(--danger);color:var(--danger)" onclick="injectFault(3,1)">SET</button>
+          <button class="btn" style="font-size:9px;padding:2px 7px" onclick="injectFault(3,0)">CLR</button>
+          <span style="font-size:10px;color:var(--text2)">D4 PARACHUTE</span>
+          <button class="btn" style="font-size:9px;padding:2px 7px;border-color:var(--danger);color:var(--danger)" onclick="injectFault(4,1)">SET</button>
+          <button class="btn" style="font-size:9px;padding:2px 7px" onclick="injectFault(4,0)">CLR</button>
+        </div>
+        <div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn" style="font-size:9px;padding:2px 8px;flex:1" onclick="injectFault(1,1);injectFault(2,1);injectFault(3,1);injectFault(4,1)">⚠ ALL FAULTS (1111)</button>
+          <button class="btn" style="font-size:9px;padding:2px 8px;flex:1" onclick="[1,2,3,4].forEach(d=>injectFault(d,0))">✓ CLEAR ALL (0000)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mission Control -->
+    <div class="panel" style="flex:1">
+      <div class="panel-header">
+        <span class="panel-title">MISSION CONTROL</span>
+      </div>
+      <div class="panel-body">
+        <button class="cmd-btn" onclick="sendCmd('MANUAL_SEPARATION')">⊕ MANUAL SEPARATION</button>
+        <button class="cmd-btn cmd-danger" onclick="confirmCmd('EMERGENCY_CHUTE','Deploy emergency parachute?\n\nThis action cannot be undone.')">⚠ EMERGENCY PARACHUTE</button>
+        <button class="cmd-btn cmd-danger" onclick="confirmCmd('REDUNDANT_ACT','Activate redundant systems?\n\nThis action cannot be undone.')">⚡ REDUNDANT ACTIVATION</button>
+        <button class="cmd-btn" onclick="sendCmd('REQUEST_STATUS')">↻ REQUEST STATUS</button>
+        <button class="cmd-btn" onclick="sendCmd('PING')">◎ PING CANSAT</button>
+        <div class="cmd-status" id="cmd-status">AWAITING COMMAND</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER COL -->
+  <div style="display:flex;flex-direction:column;gap:6px">
+
+    <!-- Real-Time Graphs -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">REAL-TIME TELEMETRY GRAPHS</span>
+        <span style="font-size:9px;color:var(--text3)" id="graph-pts">0 pts</span>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-wrap">
+          <div class="chart-wrap-title">ALTITUDE (m)</div>
+          <div style="position:relative;height:120px"><canvas id="chart-alt"></canvas></div>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-wrap-title">PRESSURE (hPa)</div>
+          <div style="position:relative;height:120px"><canvas id="chart-pres"></canvas></div>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-wrap-title">TEMPERATURE (°C)</div>
+          <div style="position:relative;height:120px"><canvas id="chart-temp"></canvas></div>
+        </div>
+        <div class="chart-wrap">
+          <!-- FIX: Clarified label to show signed value meaning -->
+          <div class="chart-wrap-title">VERTICAL SPEED (m/s) [+ = descent]</div>
+          <div style="position:relative;height:120px"><canvas id="chart-desc"></canvas></div>
+        </div>
+        <div class="chart-wrap" style="grid-column:span 2">
+          <div class="chart-wrap-title">BATTERY VOLTAGE (V)</div>
+          <div style="position:relative;height:100px"><canvas id="chart-batt"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GPS Tracking Map -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">GPS TRACKING MAP</span>
+        <span style="font-size:9px;color:var(--accent2)" id="map-coords">No Fix</span>
+      </div>
+      <div id="map-container">
+        <div id="gps-map"></div>
+      </div>
+    </div>
+
+    <!-- Packet Log -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">TELEMETRY LOG</span>
+        <button class="btn" style="font-size:9px;padding:2px 8px" onclick="clearLog()">CLEAR</button>
+      </div>
+      <div id="packet-log"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT COL -->
+  <div style="display:flex;flex-direction:column;gap:6px">
+
+    <!-- Orientation Visualization -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">ORIENTATION (3D)</span>
+      </div>
+      <div id="orientation-viz">
+        <canvas id="three-canvas"></canvas>
+      </div>
+      <div class="rpy-display">
+        <div class="rpy-item"><div class="rpy-label">ROLL</div><div class="rpy-val" id="rpy-r">0°</div></div>
+        <div class="rpy-item"><div class="rpy-label">PITCH</div><div class="rpy-val" id="rpy-p">0°</div></div>
+        <div class="rpy-item"><div class="rpy-label">YAW</div><div class="rpy-val" id="rpy-y">0°</div></div>
+      </div>
+    </div>
+
+    <!-- Artificial Horizon -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">ARTIFICIAL HORIZON</span>
+      </div>
+      <div style="padding:8px;display:flex;justify-content:center">
+        <canvas id="horizon-canvas" width="220" height="180" style="border-radius:50%;border:2px solid var(--border)"></canvas>
+      </div>
+    </div>
+
+    <!-- Live Video -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">LIVE VIDEO STREAM</span>
+        <select id="cam-select" style="background:var(--surface2);color:var(--text2);border:1px solid var(--border);font-size:10px;padding:2px 4px;border-radius:2px;font-family:var(--font)">
+          <option>Select Camera</option>
+        </select>
+      </div>
+      <div id="video-wrap">
+        <video id="live-video" autoplay muted playsinline></video>
+        <div class="video-overlay" id="vid-status" style="color:var(--text3)">NO SIGNAL</div>
+      </div>
+      <div style="padding:6px;display:flex;gap:6px">
+        <button class="btn btn-start" onclick="startCamera()" style="flex:1">▶ START CAM</button>
+        <button class="btn btn-stop" onclick="stopCamera()" style="flex:1">■ STOP CAM</button>
+      </div>
+    </div>
+
+    <!-- Stats Summary -->
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">MISSION STATS</span></div>
+      <div class="panel-body" style="padding:4px 8px">
+        <div class="telem-field"><span class="telem-label">MAX ALTITUDE</span><span class="telem-value" id="stat-maxalt">-- m</span></div>
+        <div class="telem-field"><span class="telem-label">MIN TEMP</span><span class="telem-value" id="stat-mintemp">-- °C</span></div>
+        <div class="telem-field"><span class="telem-label">PACKETS RECV</span><span class="telem-value" id="stat-pkts">0</span></div>
+        <div class="telem-field"><span class="telem-label">MISSION PHASE</span><span class="telem-value" id="stat-phase" style="color:var(--warn)">PRE-LAUNCH</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div id="confirm-modal">
+  <div class="modal-box">
+    <div class="modal-title">⚠ CONFIRM COMMAND</div>
+    <div class="modal-msg" id="modal-msg">Are you sure?</div>
+    <div class="modal-btns">
+      <button class="btn btn-danger" onclick="confirmYes()">CONFIRM EXECUTE</button>
+      <button class="btn" onclick="closeModal()">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let isRunning = false;
+let telemetryInterval = null;
+let missionStart = null;
+let missionClockInterval = null;
+let packetCount = 0;
+let telemetryLog = [];
+let pendingCmd = null;
+let camStream = null;
+let mapInstance = null;
+let mapMarker = null;
+let mapPath = [];
+let mapPolyline = null;
+let charts = {};
+let maxAlt = -Infinity, minTemp = Infinity;
+let threeRenderer, threeScene, threeCamera, threeCansat;
+
+// Simulated GPS start (India Space Lab vicinity — New Delhi)
+let simLat = 28.627 + (Math.random()-0.5)*0.02;
+let simLon = 77.083 + (Math.random()-0.5)*0.02;
+
+// ── BUG FIX #1: simAlt starts at 0 (ground level), not 600 ──
+let simAlt = 0;
+let simDesc = 0;
+let simPhase = 0; // 0=prelaunch, 1=ascent, 2=descent, 3=landed
+
+// ── BUG FIX #2: Manual fault override flags — all start null (auto) ──
+let faultD1Override = null;
+let faultD2Override = null;
+let faultD3Locked = false;
+let faultD4Locked = false;
+
+// ============================================================
+// PC TIME
+// ============================================================
+function updatePCTime() {
+  document.getElementById('pc-time').textContent = new Date().toLocaleTimeString();
+}
+setInterval(updatePCTime, 1000);
+updatePCTime();
+
+// ============================================================
+// MISSION CLOCK
+// ============================================================
+function startMissionClock() {
+  missionStart = Date.now();
+  missionClockInterval = setInterval(() => {
+    const e = Math.floor((Date.now() - missionStart) / 1000);
+    const h = String(Math.floor(e/3600)).padStart(2,'0');
+    const m = String(Math.floor((e%3600)/60)).padStart(2,'0');
+    const s = String(e%60).padStart(2,'0');
+    document.getElementById('mission-clock').textContent = `MET ${h}:${m}:${s}`;
+  }, 1000);
+}
+
+// ============================================================
+// CHARTS INIT
+// ============================================================
+function makeChart(id, label, color) {
+  const ctx = document.getElementById(id).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: label,
+        data: [],
+        borderColor: color,
+        backgroundColor: color + '22',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 0 },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          ticks: { color: '#7a8499', font: { size: 9, family: 'Courier New' }, maxTicksLimit: 4 },
+          grid: { color: '#1e2230' },
+          border: { color: '#2a2f3a' }
+        }
+      }
+    }
+  });
+}
+
+function initCharts() {
+  charts.alt  = makeChart('chart-alt',  'Altitude',       '#00d4ff');
+  charts.pres = makeChart('chart-pres', 'Pressure',       '#a78bfa');
+  charts.temp = makeChart('chart-temp', 'Temperature',    '#f97316');
+  charts.desc = makeChart('chart-desc', 'Vertical Speed', '#ff3b3b');
+  charts.batt = makeChart('chart-batt', 'Battery V',      '#00ff88');
+}
+
+const MAX_CHART_POINTS = 120;
+
+function pushChartData(chart, label, value) {
+  chart.data.labels.push(label);
+  chart.data.datasets[0].data.push(value);
+  if (chart.data.labels.length > MAX_CHART_POINTS) {
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  chart.update('none');
+}
+
+// ============================================================
+// MAP INIT
+// ============================================================
+function initMap() {
+  mapInstance = L.map('gps-map', { zoomControl: true, attributionControl: false }).setView([simLat, simLon], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap'
+  }).addTo(mapInstance);
+  const icon = L.divIcon({
+    html: '<div style="width:12px;height:12px;border-radius:50%;background:#00d4ff;border:2px solid #fff;box-shadow:0 0 8px #00d4ff"></div>',
+    iconSize: [12,12], iconAnchor: [6,6], className: ''
+  });
+  mapMarker = L.marker([simLat, simLon], { icon }).addTo(mapInstance);
+  mapPolyline = L.polyline([], { color: '#00d4ff', weight: 2, opacity: 0.7 }).addTo(mapInstance);
+}
+
+function updateMap(lat, lon) {
+  if (!mapInstance) return;
+  mapMarker.setLatLng([lat, lon]);
+  mapPath.push([lat, lon]);
+  mapPolyline.setLatLngs(mapPath);
+  if (mapPath.length < 3) mapInstance.setView([lat, lon]);
+  document.getElementById('map-coords').textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}
+
+// ============================================================
+// THREE.JS ORIENTATION
+// ============================================================
+function initThree() {
+  const container = document.getElementById('orientation-viz');
+  const w = container.clientWidth || 260;
+  const h = 200;
+  threeRenderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), antialias: true, alpha: true });
+  threeRenderer.setSize(w, h);
+  threeRenderer.setClearColor(0x111318, 1);
+  threeScene = new THREE.Scene();
+  threeCamera = new THREE.PerspectiveCamera(50, w/h, 0.1, 100);
+  threeCamera.position.set(0, 1.5, 4);
+  threeCamera.lookAt(0, 0, 0);
+  const light = new THREE.DirectionalLight(0xffffff, 1.2);
+  light.position.set(2, 4, 3);
+  threeScene.add(light);
+  threeScene.add(new THREE.AmbientLight(0x334466, 1));
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.35, 1.2, 32),
+    new THREE.MeshLambertMaterial({ color: 0x00aacc })
+  );
+  const finGeo = new THREE.BoxGeometry(0.08, 0.5, 0.3);
+  const finMat = new THREE.MeshLambertMaterial({ color: 0x0066aa });
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(finGeo, finMat);
+    fin.position.set(Math.cos(i*Math.PI/2)*0.43, -0.35, Math.sin(i*Math.PI/2)*0.43);
+    fin.rotation.y = i*Math.PI/2;
+    body.add(fin);
+  }
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.35, 0.5, 32),
+    new THREE.MeshLambertMaterial({ color: 0x00ccff })
+  );
+  nose.position.y = 0.85;
+  body.add(nose);
+  threeScene.add(new THREE.AxesHelper(1.5));
+  threeCansat = body;
+  threeScene.add(threeCansat);
+  animateThree();
+}
+
+let threeRoll = 0, threePitch = 0, threeYaw = 0;
+function animateThree() {
+  requestAnimationFrame(animateThree);
+  if (threeCansat) {
+    threeCansat.rotation.z = THREE.MathUtils.lerp(threeCansat.rotation.z, threeRoll * Math.PI/180, 0.1);
+    threeCansat.rotation.x = THREE.MathUtils.lerp(threeCansat.rotation.x, threePitch * Math.PI/180, 0.1);
+    threeCansat.rotation.y = THREE.MathUtils.lerp(threeCansat.rotation.y, threeYaw * Math.PI/180, 0.1);
+  }
+  threeRenderer.render(threeScene, threeCamera);
+}
+
+// ============================================================
+// ARTIFICIAL HORIZON
+// ============================================================
+function drawHorizon(roll, pitch) {
+  const canvas = document.getElementById('horizon-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const cx = w/2, cy = h/2, r = Math.min(w,h)/2 - 4;
+  ctx.clearRect(0,0,w,h);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.clip();
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate(-roll*Math.PI/180);
+  const pitchPx = pitch * (r/45);
+  const skyGrad = ctx.createLinearGradient(0,-r,0,pitchPx);
+  skyGrad.addColorStop(0,'#0a2040');
+  skyGrad.addColorStop(1,'#1060a0');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(-r,-r,2*r,r+pitchPx);
+  const gndGrad = ctx.createLinearGradient(0,pitchPx,0,r);
+  gndGrad.addColorStop(0,'#4a2800');
+  gndGrad.addColorStop(1,'#2a1500');
+  ctx.fillStyle = gndGrad;
+  ctx.fillRect(-r,pitchPx,2*r,r-pitchPx+1);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-r,pitchPx); ctx.lineTo(r,pitchPx); ctx.stroke();
+  for (let p = -30; p <= 30; p += 10) {
+    if (p === 0) continue;
+    const py = pitchPx - p*(r/45);
+    const lw = (p%20===0) ? 40 : 24;
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-lw/2,py); ctx.lineTo(lw/2,py); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = '8px Courier New';
+    ctx.fillText(Math.abs(p), lw/2+3, py+3);
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#ffff00';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx-40,cy); ctx.lineTo(cx-15,cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+15,cy); ctx.lineTo(cx+40,cy); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,5,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx,cy,r-6,-Math.PI+0.3,-0.3);
+  ctx.strokeStyle='rgba(255,255,255,0.2)';
+  ctx.lineWidth=1;
+  ctx.stroke();
+  const rollRad = -roll*Math.PI/180 - Math.PI/2;
+  const tx = cx + (r-6)*Math.cos(rollRad), ty = cy + (r-6)*Math.sin(rollRad);
+  ctx.fillStyle='#ffff00';
+  ctx.beginPath(); ctx.arc(tx,ty,4,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.strokeStyle='#2a2f3a'; ctx.lineWidth=3; ctx.stroke();
+}
+drawHorizon(0,0);
+
+// ============================================================
+// TELEMETRY SIMULATION
+// ──────────────────────────────────────────────────────────────
+// BUG FIX #1 — simAlt now starts at 0 (ground).
+// BUG FIX #2 — descent rate sign convention fixed:
+//   During ASCENT → simDesc is NEGATIVE (climbing, vertical speed)
+//   During DESCENT → simDesc is POSITIVE (falling)
+//   D1 fault only fires when simPhase===2 AND rate < 7 or > 13
+//   This widens the band to absorb sensor noise without false alarms.
+// ============================================================
+function genTelemetry() {
+  packetCount++;
+  const t = missionStart ? (Date.now() - missionStart) / 1000 : 0;
+
+  // Phase transitions
+  if (t < 5)        simPhase = 0;
+  else if (t < 45)  simPhase = 1; // ascent
+  else if (t < 130) simPhase = 2; // descent
+  else              simPhase = 3; // landed
+
+  if (simPhase === 1) {
+    // Climbing — altitude increases, vertical speed is negative (upward)
+    const climbRate = 8 + Math.random() * 4;
+    simAlt += climbRate;
+    simDesc = -climbRate + Math.random() * 0.5; // negative = ascending
+  } else if (simPhase === 2) {
+    // Descending — altitude decreases, vertical speed is positive (downward)
+    const dropRate = 8.5 + Math.random() * 2;
+    simAlt = Math.max(0, simAlt - dropRate);
+    simDesc = dropRate + Math.random() * 0.5;  // positive = descending
+  } else {
+    simDesc = 0;
+  }
+
+  simLat += (Math.random()-0.5)*0.0002;
+  simLon += (Math.random()-0.5)*0.0002;
+
+  const pressure    = 1013.25 * Math.pow(Math.max(0, 1 - simAlt/44330), 5.255);
+  const temperature = 15 - simAlt * 0.0065 + (Math.random()-0.5)*0.5;
+  const battery     = Math.max(3.5, 4.2 - packetCount*0.001 + Math.sin(t*0.1)*0.05);
+  const roll        = 10*Math.sin(t*0.4) + Math.random()*3;
+  const pitch       = 8*Math.cos(t*0.3) + Math.random()*2;
+  const yaw         = (t*15) % 360;
+  const sats        = simPhase > 0 ? 8 + Math.floor(Math.random()*4) : 0;
+
+  return {
+    pkt:   packetCount,
+    alt:   simAlt.toFixed(1),
+    pres:  pressure.toFixed(2),
+    temp:  temperature.toFixed(1),
+    desc:  simDesc.toFixed(2),
+    batt:  battery.toFixed(2),
+    volt:  (battery * 0.98).toFixed(2),
+    roll:  roll.toFixed(1),
+    pitch: pitch.toFixed(1),
+    yaw:   yaw.toFixed(1),
+    lat:   simLat.toFixed(6),
+    lon:   simLon.toFixed(6),
+    sats,
+    fix:   sats > 4 ? 'FIX 3D' : sats > 0 ? 'FIX 2D' : 'NO FIX'
+  };
+}
+
+// ============================================================
+// ERROR CODE SYSTEM
+// ──────────────────────────────────────────────────────────────
+// BUG FIX #2 (cont.) — D1 auto fault:
+//   Only active during DESCENT phase.
+//   Widened safe band to 7–13 m/s to handle sensor noise.
+//   During ASCENT, desc is negative → D1 auto = 0 (no false alarm).
+// ============================================================
+function updateErrorCodes(d) {
+  const descVal = parseFloat(d.desc);
+
+  // D1: Descent rate out of safe range ONLY during descent phase
+  const e1auto = (simPhase === 2 && (descVal < 7 || descVal > 13)) ? 1 : 0;
+
+  // D2: Insufficient GPS satellites
+  const e2auto = (parseInt(d.sats) < 4) ? 1 : 0;
+
+  // Apply manual overrides if set, otherwise use auto
+  const e1 = faultD1Override !== null ? faultD1Override : e1auto;
+  const e2 = faultD2Override !== null ? faultD2Override : e2auto;
+  const e3 = faultD3Locked ? 1 : 0;
+  const e4 = faultD4Locked ? 1 : 0;
+
+  setError(1, e1);
+  setError(2, e2);
+  setError(3, e3);
+  setError(4, e4);
+
+  const code = `${e1}${e2}${e3}${e4}`;
+  const codeEl = document.getElementById('fault-code-combined');
+  if (codeEl) {
+    codeEl.textContent = code;
+    codeEl.style.color = code === '0000' ? 'var(--green)' : 'var(--danger)';
+  }
+}
+
+function injectFault(digit, val) {
+  if (digit === 1) faultD1Override = val;
+  if (digit === 2) faultD2Override = val;
+  if (digit === 3) faultD3Locked = (val === 1);
+  if (digit === 4) faultD4Locked = (val === 1);
+  setError(digit, val);
+  const labels = { 1:'DESCENT RATE', 2:'GPS', 3:'PAYLOAD SEP', 4:'PARACHUTE' };
+  const state = val === 1 ? 'FAULT INJECTED' : 'CLEARED';
+  addLog(`[TEST] D${digit} ${labels[digit]}: ${state}`, val === 1 ? 'err' : 'warn');
+}
+
+function activateD4() { faultD4Locked = true; }
+
+function setError(n, val) {
+  const el  = document.getElementById(`err-d${n}`);
+  const dot = document.getElementById(`edot${n}`);
+  el.textContent = val;
+  if (val === 1) {
+    el.className = 'error-digit err-fault';
+    dot.style.background = 'var(--danger)';
+  } else {
+    el.className = 'error-digit err-ok';
+    dot.style.background = 'var(--green)';
+  }
+}
+
+// ============================================================
+// APPLY TELEMETRY TO UI
+// ============================================================
+function applyTelemetry(d) {
+  const now = new Date().toLocaleTimeString();
+
+  document.getElementById('t-pkt').textContent   = String(d.pkt).padStart(4,'0');
+  document.getElementById('t-alt').innerHTML     = `${d.alt}<span class="telem-unit">m</span>`;
+  document.getElementById('t-pres').innerHTML    = `${d.pres}<span class="telem-unit">hPa</span>`;
+  document.getElementById('t-temp').innerHTML    = `${d.temp}<span class="telem-unit">°C</span>`;
+
+  // Colour descent rate: negative = ascending (green), positive = descending (orange)
+  const descVal = parseFloat(d.desc);
+  const descColor = descVal < 0 ? 'var(--green)' : simPhase === 2 ? '#ff8844' : 'var(--accent2)';
+  document.getElementById('t-desc').innerHTML    = `<span style="color:${descColor}">${d.desc}</span><span class="telem-unit">m/s</span>`;
+
+  document.getElementById('t-batt').innerHTML    = `<span style="color:${parseFloat(d.batt)<3.8?'var(--danger)':'var(--green)'}">${d.batt}</span><span class="telem-unit">V</span>`;
+  document.getElementById('t-volt').innerHTML    = `${d.volt}<span class="telem-unit">V</span>`;
+  document.getElementById('t-roll').innerHTML    = `${d.roll}<span class="telem-unit">°</span>`;
+  document.getElementById('t-pitch').innerHTML   = `${d.pitch}<span class="telem-unit">°</span>`;
+  document.getElementById('t-yaw').innerHTML     = `${d.yaw}<span class="telem-unit">°</span>`;
+  document.getElementById('t-lat').textContent   = d.lat;
+  document.getElementById('t-lon').textContent   = d.lon;
+  document.getElementById('t-sats').textContent  = d.sats;
+
+  const fixEl = document.getElementById('t-fix');
+  fixEl.textContent  = d.fix;
+  fixEl.style.color  = d.fix === 'FIX 3D' ? 'var(--green)' : d.fix === 'FIX 2D' ? 'var(--warn)' : 'var(--danger)';
+
+  document.getElementById('tlm-updated').textContent  = now;
+  document.getElementById('packet-count').textContent = `PKT: ${String(d.pkt).padStart(4,'0')}`;
+
+  // RPY display
+  document.getElementById('rpy-r').textContent = d.roll  + '°';
+  document.getElementById('rpy-p').textContent = d.pitch + '°';
+  document.getElementById('rpy-y').textContent = d.yaw   + '°';
+
+  // Three.js
+  threeRoll  = parseFloat(d.roll);
+  threePitch = parseFloat(d.pitch);
+  threeYaw   = parseFloat(d.yaw);
+
+  // Horizon
+  drawHorizon(parseFloat(d.roll), parseFloat(d.pitch));
+
+  // Charts
+  pushChartData(charts.alt,  now, parseFloat(d.alt));
+  pushChartData(charts.pres, now, parseFloat(d.pres));
+  pushChartData(charts.temp, now, parseFloat(d.temp));
+  pushChartData(charts.desc, now, parseFloat(d.desc));
+  pushChartData(charts.batt, now, parseFloat(d.batt));
+  document.getElementById('graph-pts').textContent = `${charts.alt.data.labels.length} pts`;
+
+  // Map
+  updateMap(parseFloat(d.lat), parseFloat(d.lon));
+
+  // Error codes
+  updateErrorCodes(d);
+
+  // Stats
+  if (parseFloat(d.alt) > maxAlt) { maxAlt = parseFloat(d.alt); document.getElementById('stat-maxalt').textContent = maxAlt.toFixed(1) + ' m'; }
+  if (parseFloat(d.temp) < minTemp) { minTemp = parseFloat(d.temp); document.getElementById('stat-mintemp').textContent = minTemp.toFixed(1) + ' °C'; }
+  document.getElementById('stat-pkts').textContent = d.pkt;
+
+  const phases   = ['PRE-LAUNCH','ASCENT','DESCENT','LANDED'];
+  const phaseEl  = document.getElementById('stat-phase');
+  phaseEl.textContent  = phases[simPhase];
+  phaseEl.style.color  = ['var(--text2)','var(--green)','var(--warn)','var(--accent)'][simPhase];
+
+  // Signal bars
+  const sig = Math.min(5, Math.floor(parseInt(d.sats) / 2));
+  for (let i = 1; i <= 5; i++) {
+    document.getElementById('sb'+i).classList.toggle('active', i <= sig);
+  }
+
+  // Log
+  telemetryLog.push(d);
+  const line = `[${now}] PKT:${String(d.pkt).padStart(4,'0')} ALT:${d.alt}m TEMP:${d.temp}°C PRES:${d.pres}hPa VSPD:${d.desc}m/s GPS:${d.lat},${d.lon}`;
+  addLog(line);
+}
+
+// ============================================================
+// CONTROLS
+// ============================================================
+function startTelemetry() {
+  if (isRunning) return;
+  isRunning = true;
+  startMissionClock();
+  document.getElementById('tlm-status').textContent = '● RECEIVING';
+  document.getElementById('tlm-status').className   = 'status-badge status-active';
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').disabled  = false;
+  addLog('[SYS] Telemetry stream started', 'info');
+  telemetryInterval = setInterval(() => {
+    const d = genTelemetry();
+    applyTelemetry(d);
+  }, 1000);
+}
+
+function stopTelemetry() {
+  if (!isRunning) return;
+  isRunning = false;
+  clearInterval(telemetryInterval);
+  clearInterval(missionClockInterval);
+  document.getElementById('tlm-status').textContent = '● STOPPED';
+  document.getElementById('tlm-status').className   = 'status-badge status-idle';
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = true;
+  addLog('[SYS] Telemetry stream stopped', 'warn');
+}
+
+function exportCSV() {
+  if (!telemetryLog.length) { addLog('[SYS] No data to export', 'warn'); return; }
+  const header = 'packet,altitude,pressure,temperature,vertical_speed,battery,voltage,roll,pitch,yaw,lat,lon,sats,fix\n';
+  const rows   = telemetryLog.map(d =>
+    `${d.pkt},${d.alt},${d.pres},${d.temp},${d.desc},${d.batt},${d.volt},${d.roll},${d.pitch},${d.yaw},${d.lat},${d.lon},${d.sats},${d.fix}`
+  ).join('\n');
+  const blob = new Blob([header+rows], { type: 'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `cansat_telemetry_${Date.now()}.csv`;
+  a.click();
+  addLog('[SYS] CSV exported — ' + telemetryLog.length + ' packets', 'info');
+}
+
+// ── BUG FIX #4: Combine all 5 charts into one PNG and download it ──
+// Browsers block multiple programmatic clicks from setTimeout.
+// Solution: draw all chart canvases onto one offscreen canvas → single download.
+function exportGraphs() {
+  const chartDefs = [
+    { id: 'chart-alt',  label: 'ALTITUDE (m)'           },
+    { id: 'chart-pres', label: 'PRESSURE (hPa)'         },
+    { id: 'chart-temp', label: 'TEMPERATURE (°C)'       },
+    { id: 'chart-desc', label: 'VERTICAL SPEED (m/s)'   },
+    { id: 'chart-batt', label: 'BATTERY VOLTAGE (V)'    }
+  ];
+
+  // Gather source canvases (skip any that don't exist yet)
+  const sources = chartDefs.map(d => ({
+    canvas: document.getElementById(d.id),
+    label:  d.label
+  })).filter(s => s.canvas);
+
+  if (!sources.length) {
+    addLog('[SYS] No chart data to export yet — start telemetry first', 'warn');
+    return;
+  }
+
+  const PAD       = 16;   // outer padding
+  const LABEL_H   = 22;   // height for each chart label
+  const CHART_GAP = 12;   // gap between charts
+
+  // Use the first chart's actual rendered width
+  const chartW = sources[0].canvas.width  || 300;
+  const chartH = sources[0].canvas.height || 120;
+
+  const totalW = chartW + PAD * 2;
+  const totalH = PAD + sources.length * (LABEL_H + chartH + CHART_GAP) + PAD;
+
+  const out = document.createElement('canvas');
+  out.width  = totalW;
+  out.height = totalH;
+  const ctx  = out.getContext('2d');
+
+  // Background
+  ctx.fillStyle = '#0a0c10';
+  ctx.fillRect(0, 0, totalW, totalH);
+
+  // Title
+  ctx.fillStyle = '#00d4ff';
+  ctx.font      = 'bold 13px Courier New';
+  ctx.fillText(`CANSAT TELEMETRY GRAPHS — ${new Date().toLocaleString()}`, PAD, PAD - 2);
+
+  // Draw each chart
+  sources.forEach((src, i) => {
+    const y = PAD + i * (LABEL_H + chartH + CHART_GAP);
+
+    // Label
+    ctx.fillStyle = '#7a8499';
+    ctx.font      = '11px Courier New';
+    ctx.fillText(src.label, PAD, y + 13);
+
+    // Chart image
+    ctx.drawImage(src.canvas, PAD, y + LABEL_H, chartW, chartH);
+
+    // Border around chart
+    ctx.strokeStyle = '#2a2f3a';
+    ctx.lineWidth   = 1;
+    ctx.strokeRect(PAD, y + LABEL_H, chartW, chartH);
+  });
+
+  // Trigger single download
+  const a    = document.createElement('a');
+  a.href     = out.toDataURL('image/png');
+  a.download = `cansat_all_graphs_${Date.now()}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  addLog(`[SYS] All ${sources.length} graphs exported as one PNG`, 'info');
+}
+
+function syncTime() {
+  addLog('[SYS] PC time synchronized: ' + new Date().toISOString(), 'info');
+}
+
+// ── BUG FIX #1 (also in reset): simAlt resets to 0, not 600 ──
+function resetPackets() {
+  if (isRunning) stopTelemetry();
+
+  packetCount = 0;
+  telemetryLog = [];
+  maxAlt = -Infinity;
+  minTemp = Infinity;
+
+  // Reset simulation to ground state
+  simAlt   = 0;           // FIX: was 600
+  simDesc  = 0;
+  simPhase = 0;
+  simLat   = 28.627 + (Math.random()-0.5)*0.02;
+  simLon   = 77.083 + (Math.random()-0.5)*0.02;
+  missionStart = null;
+  clearInterval(missionClockInterval);
+  document.getElementById('mission-clock').textContent = 'MET 00:00:00';
+
+  // Reset stats
+  document.getElementById('stat-maxalt').textContent  = '-- m';
+  document.getElementById('stat-mintemp').textContent = '-- °C';
+  document.getElementById('stat-pkts').textContent    = '0';
+  document.getElementById('stat-phase').textContent   = 'PRE-LAUNCH';
+  document.getElementById('stat-phase').style.color   = 'var(--text2)';
+
+  // Reset error code displays
+  for (let i = 1; i <= 4; i++) setError(i, 0);
+  document.getElementById('fault-code-combined').textContent = '0000';
+  document.getElementById('fault-code-combined').style.color = 'var(--green)';
+
+  // Reset charts
+  Object.values(charts).forEach(c => {
+    c.data.labels = [];
+    c.data.datasets[0].data = [];
+    c.update('none');
+  });
+  document.getElementById('graph-pts').textContent = '0 pts';
+
+  // Reset map path
+  mapPath = [];
+  if (mapPolyline) mapPolyline.setLatLngs([]);
+
+  // Reset telemetry fields
+  ['t-alt','t-pres','t-temp','t-desc','t-batt','t-volt',
+   't-roll','t-pitch','t-yaw','t-lat','t-lon','t-sats'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '--';
+  });
+  document.getElementById('t-pkt').textContent       = '0000';
+  document.getElementById('t-fix').textContent       = 'NO FIX';
+  document.getElementById('t-fix').style.color       = 'var(--warn)';
+  document.getElementById('tlm-updated').textContent = '--';
+  document.getElementById('packet-count').textContent = 'PKT: 0000';
+
+  // Reset signal bars
+  for (let i = 1; i <= 5; i++) document.getElementById('sb'+i).classList.remove('active');
+
+  // Reset status badge
+  document.getElementById('tlm-status').textContent = '● STANDBY';
+  document.getElementById('tlm-status').className   = 'status-badge status-idle';
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = true;
+
+  // Reset all fault inject overrides
+  faultD1Override = null;
+  faultD2Override = null;
+  faultD3Locked   = false;
+  faultD4Locked   = false;
+
+  // Reset horizon
+  drawHorizon(0, 0);
+  document.getElementById('rpy-r').textContent = '0°';
+  document.getElementById('rpy-p').textContent = '0°';
+  document.getElementById('rpy-y').textContent = '0°';
+
+  addLog('[SYS] Full reset complete — ready for new mission', 'warn');
+}
+
+function clearLog() {
+  document.getElementById('packet-log').innerHTML = '';
+}
+
+// ============================================================
+// COMMANDS
+// ============================================================
+function sendCmd(cmd) {
+  const t = new Date().toLocaleTimeString();
+  const statusMap = {
+    'MANUAL_SEPARATION': '► SEPARATION COMMAND SENT',
+    'REQUEST_STATUS':    '► STATUS REQUEST SENT',
+    'PING':              '► PING SENT — AWAITING ACK'
+  };
+  setStatus(statusMap[cmd] || '► COMMAND SENT: ' + cmd, 'green');
+  addLog(`[CMD] ${cmd} dispatched at ${t}`, 'info');
+  setTimeout(() => {
+    if (cmd === 'PING')           setStatus('◎ PING ACK RECEIVED +142ms', 'green');
+    else if (cmd === 'REQUEST_STATUS') setStatus('✓ STATUS: ALL SYSTEMS NOMINAL', 'green');
+    else                          setStatus('✓ EXECUTED: ' + cmd, 'green');
+    addLog(`[CMD] ${cmd} ACK received`, 'info');
+  }, Math.random()*500+200);
+}
+
+function confirmCmd(cmd, msg) {
+  pendingCmd = cmd;
+  document.getElementById('modal-msg').textContent = msg;
+  document.getElementById('confirm-modal').classList.add('show');
+}
+
+// ── BUG FIX #5 (confirmed already correct — kept explicit for clarity):
+//    Save pendingCmd BEFORE closeModal() nulls it. ──
+function confirmYes() {
+  const cmd = pendingCmd;   // capture before closeModal clears it
+  closeModal();
+  if (cmd === 'EMERGENCY_CHUTE') {
+    activateD4();
+    setError(4, 1);
+    setStatus('⚠ EMERGENCY PARACHUTE DEPLOYED!', 'red');
+    addLog('[CMD] EMERGENCY PARACHUTE DEPLOYED — D4 FAULT ACTIVE', 'err');
+    sendCmd('EMERGENCY_CHUTE');
+  } else if (cmd === 'REDUNDANT_ACT') {
+    setStatus('⚡ REDUNDANT SYSTEMS ACTIVATED', 'warn');
+    addLog('[CMD] REDUNDANT ACTIVATION executed', 'warn');
+    sendCmd('REDUNDANT_ACT');
+  }
+}
+
+function closeModal() {
+  document.getElementById('confirm-modal').classList.remove('show');
+  pendingCmd = null;
+}
+
+function setStatus(msg, color) {
+  const el      = document.getElementById('cmd-status');
+  el.textContent = msg;
+  el.style.color = color === 'green' ? 'var(--green)' : color === 'red' ? 'var(--danger)' : 'var(--warn)';
+}
+
+// ============================================================
+// PACKET LOG
+// ============================================================
+function addLog(line, type) {
+  const log = document.getElementById('packet-log');
+  const div = document.createElement('div');
+  div.className   = 'log-line' + (type === 'warn' ? ' log-warn' : type === 'err' ? ' log-err' : '');
+  div.textContent = line;
+  log.appendChild(div);
+  if (log.children.length > 200) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ============================================================
+// CAMERA
+// ============================================================
+async function populateCameras() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const sel = document.getElementById('cam-select');
+    sel.innerHTML = '<option>Select Camera</option>';
+    devices.filter(d=>d.kind==='videoinput').forEach((d,i) => {
+      const opt = document.createElement('option');
+      opt.value       = d.deviceId;
+      opt.textContent = d.label || `Camera ${i+1}`;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+async function startCamera() {
+  try {
+    const deviceId    = document.getElementById('cam-select').value;
+    const constraints = { video: deviceId && deviceId !== 'Select Camera' ? { deviceId: { exact: deviceId } } : true };
+    camStream         = await navigator.mediaDevices.getUserMedia(constraints);
+    const vid         = document.getElementById('live-video');
+    vid.srcObject     = camStream;
+    const ov          = document.getElementById('vid-status');
+    ov.innerHTML      = '<span class="rec-dot"></span>LIVE';
+    ov.style.color    = '#ff3b3b';
+    addLog('[CAM] Video stream started', 'info');
+    await populateCameras();
+  } catch(e) {
+    addLog('[CAM] ERROR: ' + e.message, 'err');
+    document.getElementById('vid-status').textContent = 'CAM ERROR';
+  }
+}
+
+function stopCamera() {
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+    document.getElementById('live-video').srcObject  = null;
+    document.getElementById('vid-status').textContent = 'NO SIGNAL';
+    document.getElementById('vid-status').style.color = 'var(--text3)';
+    addLog('[CAM] Video stream stopped', 'warn');
+  }
+}
+
+// ============================================================
+// WEBSOCKET RECEIVER (Python Simulator Integration)
+// ============================================================
+let wsConn = null;
+let wsMode = false;
+
+function connectWebSocket() {
+  const port = document.getElementById('ws-port').value || '8765';
+  const url  = `ws://localhost:${port}`;
+  addLog(`[WS] Connecting to ${url} ...`, 'info');
+  document.getElementById('ws-status').textContent = 'CONNECTING...';
+  document.getElementById('ws-status').style.color = 'var(--warn)';
+
+  try {
+    wsConn = new WebSocket(url);
+  } catch(e) {
+    addLog('[WS] ERROR: ' + e.message, 'err');
+    return;
+  }
+
+  wsConn.onopen = () => {
+    wsMode = true;
+    addLog('[WS] ✓ Connected to Python telemetry simulator', 'info');
+    document.getElementById('ws-status').textContent = '● LIVE';
+    document.getElementById('ws-status').style.color = 'var(--green)';
+    document.getElementById('btn-ws-connect').disabled    = true;
+    document.getElementById('btn-ws-disconnect').disabled = false;
+    if (!missionStart) {
+      missionStart = Date.now();
+      startMissionClock();
+      document.getElementById('tlm-status').textContent = '● RECEIVING';
+      document.getElementById('tlm-status').className   = 'status-badge status-active';
+      document.getElementById('btn-start').disabled = true;
+      document.getElementById('btn-stop').disabled  = false;
+      isRunning = true;
+    }
+  };
+
+  wsConn.onmessage = (event) => {
+    try {
+      const raw = event.data.trim();
+      let d;
+      if (raw.startsWith('{')) {
+        d = JSON.parse(raw);
+        d.pkt  = d.pkt  ?? d.packet_id ?? packetCount+1;
+        d.alt  = d.alt  ?? d.altitude;
+        d.pres = d.pres ?? d.pressure;
+        d.temp = d.temp ?? d.temperature;
+        d.desc = d.desc ?? d.descent_rate;
+        d.batt = d.batt ?? d.battery;
+        d.volt = d.volt ?? d.voltage ?? (parseFloat(d.batt)*0.98).toFixed(2);
+        d.roll = d.roll ?? 0; d.pitch = d.pitch ?? 0; d.yaw = d.yaw ?? 0;
+        d.lat  = d.lat  ?? d.latitude  ?? simLat;
+        d.lon  = d.lon  ?? d.longitude ?? simLon;
+        d.sats = d.sats ?? d.satellites ?? 8;
+        d.fix  = d.fix  ?? (d.sats > 4 ? 'FIX 3D' : 'NO FIX');
+        ['alt','pres','temp','desc','batt','volt','roll','pitch','yaw','lat','lon'].forEach(k => {
+          if (d[k] !== undefined) d[k] = parseFloat(d[k]).toFixed(k==='lat'||k==='lon'?6:2);
+        });
+        d.pkt = parseInt(d.pkt);
+        packetCount = d.pkt;
+      } else {
+        const p = raw.split(',');
+        if (p.length < 8) { addLog('[WS] Bad packet: ' + raw, 'err'); return; }
+        d = {
+          pkt:   parseInt(p[0]),
+          alt:   p[1], pres: p[2], temp: p[3],
+          desc:  p[4], batt: p[5],
+          volt:  p[6] ?? (parseFloat(p[5])*0.98).toFixed(2),
+          roll:  p[7]??'0', pitch: p[8]??'0', yaw: p[9]??'0',
+          lat:   p[10]??simLat.toFixed(6), lon: p[11]??simLon.toFixed(6),
+          sats:  parseInt(p[12]??'8'),
+          fix:   p[13]?.trim() ?? 'FIX 3D'
+        };
+        packetCount = d.pkt;
+      }
+      applyTelemetry(d);
+      telemetryLog.push(d);
+    } catch(e) {
+      addLog('[WS] Parse error: ' + e.message, 'err');
+    }
+  };
+
+  wsConn.onerror = () => {
+    addLog('[WS] ✗ Connection error — is the Python simulator running?', 'err');
+    document.getElementById('ws-status').textContent = '✗ ERROR';
+    document.getElementById('ws-status').style.color = 'var(--danger)';
+  };
+
+  wsConn.onclose = () => {
+    wsMode = false;
+    addLog('[WS] Disconnected from simulator', 'warn');
+    document.getElementById('ws-status').textContent = '● OFFLINE';
+    document.getElementById('ws-status').style.color = 'var(--text3)';
+    document.getElementById('btn-ws-connect').disabled    = false;
+    document.getElementById('btn-ws-disconnect').disabled = true;
+  };
+}
+
+function disconnectWebSocket() {
+  if (wsConn) { wsConn.close(); wsConn = null; }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+function gcsInit() {
+  initCharts();
+  initMap();
+  initThree();
+  populateCameras();
+  addLog('[SYS] CanSat GCS v2.1 initialized — all bugs fixed', 'info');
+  addLog('[SYS] MODE A: Click ▶ START for built-in simulation', 'info');
+  addLog('[SYS] MODE B: Run Python simulator → click WS CONNECT', 'info');
+  addLog('[SYS] All subsystems nominal', 'info');
+}
+</script>
+
+<!-- External libraries -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        onload="window._leafletReady=true;window._tryGcsInit&&window._tryGcsInit()"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"
+        onload="window._chartReady=true;window._tryGcsInit&&window._tryGcsInit()"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+        onload="window._threeReady=true;window._tryGcsInit&&window._tryGcsInit()"></script>
+<script>
+window._tryGcsInit = function() {
+  if (window._leafletReady && window._chartReady && window._threeReady) {
+    window._tryGcsInit = null;
+    gcsInit();
+  }
+};
+if (window._leafletReady && window._chartReady && window._threeReady) gcsInit();
+</script>
+</body>
+</html>

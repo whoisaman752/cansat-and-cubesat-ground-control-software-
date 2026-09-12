@@ -1,0 +1,22 @@
+CanSat Ground Control Software — Source Code
+=============================================
+cansat_gcs.html
+  - Single-file web application (HTML + CSS + JavaScript)
+  - Real-time telemetry display: altitude, pressure, temperature,
+    vertical speed, battery, GPS tracking, 3D orientation
+  - Chart.js for live graphs, Leaflet.js for GPS map,
+    Three.js for 3D CanSat model
+  - WebSocket client to receive live data from Python simulator
+    or real CanSat radio module
+  - Built-in simulation mode (no Python required)
+  - Fault code system: D1 (descent rate), D2 (GPS),
+    D3 (payload separation), D4 (parachute)
+
+cansat_simulator.py
+  - Python 3 WebSocket server that simulates CanSat telemetry
+  - Simulates full flight: PRE-LAUNCH → ASCENT → DESCENT → LANDED
+  - Sends JSON packets at 1 Hz over ws://localhost:8765
+  - Dependency: pip install websockets
+
+Languages: HTML5, CSS3, JavaScript (ES6), Python 3.8+
+External Libraries: Chart.js 4.4.1, Leaflet.js 1.9.4, Three.js r128

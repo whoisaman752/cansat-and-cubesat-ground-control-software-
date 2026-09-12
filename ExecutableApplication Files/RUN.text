@@ -1,0 +1,36 @@
+HOW TO RUN CANSAT GCS
+=====================
+
+OPTION A — Simulation Mode (no hardware needed)
+------------------------------------------------
+1. Open cansat_gcs.html in Chrome or Firefox
+2. Click ▶ START button
+3. Watch live telemetry simulation for ~130 seconds
+
+OPTION B — Python Simulator Mode (WebSocket)
+--------------------------------------------
+Step 1: Install Python dependency
+        pip install websockets
+
+Step 2: Run the simulator
+        python cansat_simulator.py
+
+Step 3: Open cansat_gcs.html in Chrome or Firefox
+
+Step 4: In the GCS top bar, enter port 8765
+        Click WS CONNECT
+
+Step 5: Telemetry will stream live from the Python simulator
+
+OPTION C — Real Hardware Mode
+------------------------------
+1. Connect your CanSat radio receiver to PC
+2. Write a bridge script that reads serial port and
+   forwards JSON packets to ws://localhost:8765
+3. Follow Option B steps 3–5
+
+SYSTEM REQUIREMENTS
+--------------------
+- Any modern browser (Chrome 90+, Firefox 88+, Edge 90+)
+- Python 3.8+ (only needed for Option B/C)
+- No installation needed for the GCS itself
